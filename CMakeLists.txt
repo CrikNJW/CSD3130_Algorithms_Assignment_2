@@ -1,15 +1,37 @@
 cmake_minimum_required(VERSION 3.20)
 project(SeamCarver LANGUAGES CXX)
 
+add_library(graph-cut "src/graph cut/graph_cut.cpp")
+target_include_directories(graph-cut PUBLIC "src/graph cut")
+target_compile_features(graph-cut PUBLIC cxx_std_17)
+
+if(NOT WIN32)
+    message(FATAL_ERROR "The image CLI currently uses Windows Imaging Component and requires Windows.")
+endif()
+add_library(seam-carver-app src/image.cpp src/image_io_windows.cpp src/cli.cpp "src/graph cut/resize.cpp")
+target_include_directories(seam-carver-app PUBLIC src)
+target_link_libraries(seam-carver-app PUBLIC graph-cut PRIVATE windowscodecs ole32)
+
 add_executable(seam-carver src/main.cpp)
-target_compile_features(seam-carver PRIVATE cxx_std_17)
+target_link_libraries(seam-carver PRIVATE seam-carver-app)
 
 # Use the static MSVC runtime so the starter executable runs on its own.
 set_property(TARGET seam-carver PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET graph-cut PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+set_property(TARGET seam-carver-app PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 include(CTest)
 if(BUILD_TESTING)
     add_test(NAME cli-help COMMAND seam-carver --help)
+    add_test(NAME graph-cut-demo COMMAND seam-carver --graph-cut-demo)
+    add_executable(graph-cut-tests tests/graph_cut_tests.cpp)
+    target_link_libraries(graph-cut-tests PRIVATE graph-cut)
+    set_property(TARGET graph-cut-tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    add_test(NAME graph-cut-correctness COMMAND graph-cut-tests)
+    add_executable(image-cli-tests tests/image_cli_tests.cpp)
+    target_link_libraries(image-cli-tests PRIVATE seam-carver-app)
+    set_property(TARGET image-cli-tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    add_test(NAME image-cli-correctness COMMAND image-cli-tests)
 endif()
 
 install(TARGETS seam-carver RUNTIME DESTINATION .)
