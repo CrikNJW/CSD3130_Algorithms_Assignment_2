@@ -7,7 +7,41 @@
 #include <random>
 #include <sstream>
 using namespace seam_carver;
-void require(bool v) { if (!v) throw std::runtime_error("DP test failed"); }
+void require(bool condition, const char *message = "DP test failed") {
+    if (!condition) throw std::runtime_error(message);
+}
+
+void check_hand_worked_table() {
+    const EnergyMap energy{{8, 1, 9}, {9, 6, 1}, {8, 1, 9}};
+    const auto table = build_vertical_dp_table(energy);
+
+    // Bottom column 0 can use only the first two costs (10 and 7) above it.
+    // Bottom columns 1 and 2 can also reach the cheapest cost, 2, in column 2.
+    const EnergyMap expected_costs{{8, 1, 9}, {10, 7, 2}, {15, 3, 11}};
+    const std::vector<std::vector<std::size_t>> expected_predecessors{{}, {1, 1, 1}, {1, 2, 2}};
+    require(table.cumulative_costs == expected_costs, "Vertical DP costs differ from the hand-worked grid.");
+    require(table.predecessor_columns == expected_predecessors,
+            "Vertical DP predecessor columns differ from the hand-worked grid.");
+
+    // The cheapest bottom endpoint leads from column 1 through column 2 to column 1.
+    const auto seam = find_vertical_dp(energy);
+    require(seam.indices == std::vector<std::size_t>{1, 2, 1},
+            "Vertical DP seam differs from the hand-worked path.");
+    require(seam.energy == 3.0, "Vertical DP seam should have total energy 3.");
+
+    // An asymmetric path checks top-to-bottom order, and one row needs no predecessor.
+    const auto diagonal_seam = find_vertical_dp({{1, 9}, {9, 1}});
+    require(diagonal_seam.indices == std::vector<std::size_t>{0, 1},
+            "Vertical DP seam columns are out of row order.");
+    const auto single_row_seam = find_vertical_dp({{9, 1, 1}});
+    require(single_row_seam.indices == std::vector<std::size_t>{1} && single_row_seam.energy == 1.0,
+            "Single-row seam should select the leftmost minimum.");
+
+    // Equal costs keep the leftmost allowed predecessor at each column.
+    const auto tied_table = build_vertical_dp_table({{1, 1, 1}, {1, 1, 1}});
+    require(tied_table.predecessor_columns[1] == std::vector<std::size_t>{0, 0, 1},
+            "Equal predecessor costs did not favor the leftmost column.");
+}
 double enumerate(const EnergyMap& e, std::size_t r, std::size_t c) {
     if (r + 1 == e.size()) return e[r][c];
     double best = std::numeric_limits<double>::infinity();
@@ -40,6 +74,7 @@ template<class F> void rejects(F f) {
 }
 int main() {
  try {
+    check_hand_worked_table();
     std::mt19937 rng(42);
     for (std::size_t h = 1; h <= 5; ++h) for (std::size_t w = 1; w <= 5; ++w)
         for (int trial = 0; trial < 20; ++trial) {

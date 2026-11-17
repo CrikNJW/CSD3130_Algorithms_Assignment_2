@@ -31,6 +31,8 @@ energy. Empty, ragged, negative, or non-finite maps are rejected.
 
 A seam search takes O(HW) time and O(HW) auxiliary space for backtracking;
 cumulative costs use two rolling rows (O(W), or O(H) horizontally).
+`build_vertical_dp_table` uses the same recurrence and also retains every cost
+row so the cumulative costs and predecessor columns can be inspected together.
 `resize_dp` validates dimensions and recalculates energy after each removal,
 sharing the existing pixel-removal functions, alpha preservation, progress
 callback and abort controls. Removing k seams takes O(kHW) time as an upper
@@ -40,8 +42,9 @@ Enlargement is not supported.
 ## Verification
 
 Run the usual CMake build and CTest commands from the README. The `dp-correctness`
-test compares 500 small maps against exhaustive enumeration, verifies horizontal
-transposition, path connectivity, tie-breaking, invalid inputs, unchanged sizes,
+test checks a hand-worked cost and predecessor table, compares 500 small maps
+against exhaustive enumeration, and verifies horizontal transposition, path
+connectivity, tie-breaking, invalid inputs, unchanged sizes,
 repeated removal, progress, cancellation, and an end-to-end CLI PNG resize.
 Existing Graph Cut and image/CLI regression tests run alongside it.
 
