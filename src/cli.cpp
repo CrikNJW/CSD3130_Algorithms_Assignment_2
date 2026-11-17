@@ -52,6 +52,19 @@ namespace seam_carver
             }
         }
 
+        std::filesystem::path image_input_directory(const std::filesystem::path &executable_directory)
+        {
+            // The local build places the executable in build/Release (or directly in build).
+            const auto build_directory = executable_directory.filename() == "build"
+                                             ? executable_directory
+                                             : executable_directory.parent_path();
+            const auto project_directory = build_directory.parent_path();
+            if (build_directory.filename() == "build" &&
+                std::filesystem::is_regular_file(project_directory / "CMakeLists.txt"))
+                return project_directory / "input";
+            return executable_directory / "input";
+        }
+
         std::filesystem::path output_path(const std::filesystem::path &directory,
                                           const std::filesystem::path &input,
                                           std::size_t width, std::size_t height)
@@ -70,6 +83,7 @@ namespace seam_carver
                         const std::filesystem::path &executable_directory,
                         const std::function<int()> &poll_key)
     {
+        const auto input_directory = image_input_directory(executable_directory);
         const bool console_keys = &input == &std::cin && _isatty(_fileno(stdin));
         const auto key = [&]() -> int
         {
@@ -108,6 +122,7 @@ namespace seam_carver
                 }
                 Image image;
                 std::filesystem::path source;
+                output << "Input folder: " << input_directory.u8string() << '\n';
                 while (true)
                 {
                     auto name = read_line(input, output, "Image file (PNG/JPEG/BMP/GIF/TIFF): ");
@@ -116,9 +131,10 @@ namespace seam_carver
                         name = name.substr(1, name.size() - 2);
                     try
                     {
-                        source = std::filesystem::u8path(name);
+                        const auto path = std::filesystem::u8path(name);
+                        source = path.is_absolute() ? path : input_directory / path;
                         if (!std::filesystem::is_regular_file(source))
-                            throw std::runtime_error("The path is not a readable image file.");
+                            throw std::runtime_error("No readable image file at " + source.u8string());
                         image = load_image(source);
                         break;
                     }

@@ -13,15 +13,18 @@ The batch file can find the CMake bundled with
 Visual Studio. The build requires the **Desktop development with C++** workload
 with the **C++ CMake tools for Windows** component or a separate CMake installation.
 
-Run `seam-carver.exe` without arguments (or double-click it). Choose **1. Graph
-Cut**, enter an image path, then enter the target **height** and **width**.
+Put your image in the `input` folder at the repository root. In the menu, choose
+**1. Graph Cut**, enter the filename such as `photo.png`, then enter the target
+**height** and **width**. You can also open the compiled executable directly.
 DP and Greedy are listed but unavailable. Invalid choices, files, and dimensions
 are prompted again. Enter `q` at any prompt or `0` at the algorithm menu to exit.
 After saving, the algorithm menu appears again so the window stays open.
 
-Paths may contain spaces and may be quoted, including files dragged into the
-terminal. Relative input paths are resolved from the current working directory.
-The image must decode successfully before dimensions are requested.
+Relative paths start in `input` regardless of where you launch the executable.
+If you run an extracted release outside the repository, put `input` beside the
+executable. Full paths also work, including files dragged into the terminal.
+Paths may contain spaces and may be quoted. The image must decode successfully
+before dimensions are requested.
 
 - Input: PNG, JPEG, BMP, GIF, and TIFF via Windows Imaging Component. For
   multi-frame files, only the first frame is used. EXIF orientation and color

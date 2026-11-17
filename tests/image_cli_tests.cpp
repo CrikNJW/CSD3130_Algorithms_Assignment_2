@@ -95,10 +95,15 @@ int main()
 
         const auto unique = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
         const auto directory = fs::current_path() / ("image-cli-test-" + unique);
-        const auto exe_directory = directory / "fake executable directory";
+        const auto build_directory = directory / "build";
+        const auto exe_directory = build_directory / "Release";
+        const auto input_directory = directory / "input";
         fs::create_directories(exe_directory);
+        fs::create_directories(input_directory);
+        const auto project_file = directory / "CMakeLists.txt";
+        std::ofstream(project_file) << "# Test repository root\n";
         // Unicode plus spaces verifies native Windows paths and CLI UTF-8 conversion.
-        const auto source = directory / fs::u8path("sample \xE5\x9B\xBE image.png");
+        const auto source = input_directory / fs::u8path("sample \xE5\x9B\xBE image.png");
         save_png(original, source);
         const auto decoded = load_image(source);
         require(decoded.width == 3 && decoded.height == 3 && decoded.pixels == original.pixels,
@@ -107,7 +112,7 @@ int main()
         std::ofstream(corrupt) << "This is not an image.";
         std::ostringstream commands;
         commands << "bad\n2\n3\n1\nmissing-file.png\n\"" << corrupt.u8string()
-                 << "\"\n\"" << source.u8string() << "\"\n0\n4\n1.5\n2\n-1\n2junk\n2\n"
+                 << "\"\n\"" << source.filename().u8string() << "\"\n0\n4\n1.5\n2\n-1\n2junk\n2\n"
                  << "1\n" << source.u8string() << "\n2\n2\n0\n";
         std::istringstream input(commands.str());
         std::ostringstream output;
@@ -154,9 +159,11 @@ int main()
             require(run_interactive(cancelled, messages, exe_directory) == 0, "Cancellation failed");
         }
         // Remove only this test's known files and then its empty directories.
-        for (const auto& file : {source, corrupt, first, second, third}) fs::remove(file);
+        for (const auto& file : {source, corrupt, project_file, first, second, third}) fs::remove(file);
         fs::remove(exe_directory / "output");
         fs::remove(exe_directory);
+        fs::remove(build_directory);
+        fs::remove(input_directory);
         fs::remove(directory);
         std::cout << "Image pixels, energy, resizing, PNG I/O, and interactive CLI checks passed.\n";
     } catch (const std::exception& error) {
