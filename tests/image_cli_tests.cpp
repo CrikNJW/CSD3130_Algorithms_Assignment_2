@@ -92,7 +92,7 @@ int main()
         const auto corrupt = directory / "corrupt.png";
         std::ofstream(corrupt) << "This is not an image.";
         std::ostringstream commands;
-        commands << "bad\n2\n3\n1\nmissing-file.png\n\"" << corrupt.u8string()
+        commands << "bad\n3\n1\nmissing-file.png\n\"" << corrupt.u8string()
                  << "\"\n\"" << source.u8string() << "\"\n0\n4\n1.5\n2\n-1\n2junk\n2\n"
                  << "1\n" << source.u8string() << "\n2\n2\n0\n";
         std::istringstream input(commands.str());

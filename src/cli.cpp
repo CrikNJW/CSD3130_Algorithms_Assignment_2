@@ -1,5 +1,6 @@
 #include "cli.h"
 #include "resize.h"
+#include "dp.h"
 
 #include <charconv>
 #include <chrono>
@@ -54,10 +55,10 @@ namespace seam_carver
 
         std::filesystem::path output_path(const std::filesystem::path &directory,
                                           const std::filesystem::path &input,
-                                          std::size_t width, std::size_t height)
+                                          std::size_t width, std::size_t height, const std::string &algorithm)
         {
             std::filesystem::create_directories(directory);
-            const auto stem = input.stem().u8string() + "_graph_cut_" +
+            const auto stem = input.stem().u8string() + "_" + algorithm + "_" +
                               std::to_string(width) + "x" + std::to_string(height);
             auto candidate = directory / std::filesystem::u8path(stem + ".png");
             for (std::size_t number = 1; std::filesystem::exists(candidate); ++number)
@@ -91,17 +92,17 @@ namespace seam_carver
             while (true)
             {
                 output << "\nChoose an algorithm:\n"
-                          "  1. Graph Cut\n  2. Dynamic Programming (not implemented yet)\n"
+                          "  1. Graph Cut\n  2. Dynamic Programming\n"
                           "  3. Greedy (not implemented yet)\n  0. Exit\n";
                 const auto choice = read_line(input, output, "Algorithm: ");
                 if (choice == "0")
                     break;
-                if (choice == "2" || choice == "3")
+                if (choice == "3")
                 {
-                    output << "That algorithm is not implemented yet. Please choose Graph Cut.\n";
+                    output << "That algorithm is not implemented yet. Please choose Graph Cut or Dynamic Programming.\n";
                     continue;
                 }
-                if (choice != "1")
+                if (choice != "1" && choice != "2")
                 {
                     output << "Please select 1, 2, 3, or 0.\n";
                     continue;
@@ -132,8 +133,9 @@ namespace seam_carver
                 const auto width = dimension(input, output, "width", image.width);
                 try
                 {
-                    const auto destination = output_path(executable_directory / "output", source, width, height);
-                    output << "Resizing with Graph Cut. Large images may take some time.\n";
+                    const auto destination = output_path(executable_directory / "output", source, width, height, choice == "2" ? "dp" : "graph_cut");
+                    output << "Resizing with " << (choice == "2" ? "Dynamic Programming" : "Graph Cut") << ". Large images may take some time.\n";
+                    const auto resize = choice == "2" ? resize_dp : resize_graph_cut;
                     const auto start = std::chrono::steady_clock::now();
                     const auto total = image.width - width + image.height - height;
                     std::atomic<std::size_t> completed{0};
@@ -142,7 +144,7 @@ namespace seam_carver
                     if (controls)
                         output << "Press A to request abort, then Y or N (no Enter needed).\n";
                     auto work = std::async(std::launch::async, [&]
-                                           { resize_graph_cut(image, width, height, [&](std::size_t done, std::size_t)
+                                           { resize(image, width, height, [&](std::size_t done, std::size_t)
                                                               { completed.store(done, std::memory_order_relaxed); }, [&]
                                                               { return abort_requested.load(std::memory_order_relaxed); }); });
                     constexpr const char *spinner[] = {
