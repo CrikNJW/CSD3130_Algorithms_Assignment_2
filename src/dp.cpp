@@ -53,4 +53,26 @@ namespace seam_carver
 
         return table;
     }
+
+    DpSeam find_vertical_dp(const EnergyMap &energy)
+    {
+        const auto table = build_vertical_dp_table(energy);
+        const auto &bottom_costs = table.cumulative_costs.back();
+        // The first minimum gives the leftmost endpoint among equal-cost seams.
+        const auto endpoint = std::min_element(bottom_costs.begin(), bottom_costs.end());
+        if (!std::isfinite(*endpoint))
+            throw std::overflow_error("Minimum vertical seam energy overflowed.");
+
+        auto column = static_cast<std::size_t>(endpoint - bottom_costs.begin());
+        DpSeam seam{std::vector<std::size_t>(table.cumulative_costs.size()), *endpoint};
+        // Follow predecessors upward, storing each column at its original row index.
+        // Row zero has no predecessor, so record it after the loop.
+        for (std::size_t row = seam.indices.size() - 1; row > 0; --row)
+        {
+            seam.indices[row] = column;
+            column = table.predecessor_columns[row][column];
+        }
+        seam.indices.front() = column;
+        return seam;
+    }
 } // namespace seam_carver

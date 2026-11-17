@@ -5,6 +5,7 @@
 
 using seam_carver::build_vertical_dp_table;
 using seam_carver::EnergyMap;
+using seam_carver::find_vertical_dp;
 
 void require(bool condition, const char *message)
 {
@@ -27,11 +28,27 @@ int main()
         require(table.predecessor_columns == expected_predecessors,
                 "Vertical DP predecessor columns differ from the hand-worked grid.");
 
+        // Bottom column 1 costs 3. Its predecessors lead through middle column 2 to top column 1.
+        const auto seam = find_vertical_dp(energy);
+        require(seam.indices == std::vector<std::size_t>{1, 2, 1},
+                "Vertical DP seam differs from the hand-worked path.");
+        require(seam.energy == 3.0, "Vertical DP seam should have total energy 3.");
+
+        // This path differs when reversed, so it checks that output is top to bottom.
+        const auto diagonal_seam = find_vertical_dp({{1, 9}, {9, 1}});
+        require(diagonal_seam.indices == std::vector<std::size_t>{0, 1},
+                "Vertical DP seam columns are out of row order.");
+
+        // A single row uses its leftmost minimum directly, without any predecessor.
+        const auto single_row_seam = find_vertical_dp({{9, 1, 1}});
+        require(single_row_seam.indices == std::vector<std::size_t>{1} && single_row_seam.energy == 1.0,
+                "Single-row seam should select the leftmost minimum.");
+
         // Equal costs should keep the leftmost allowed predecessor at each column.
         const auto tied_table = build_vertical_dp_table({{1, 1, 1}, {1, 1, 1}});
         require(tied_table.predecessor_columns[1] == std::vector<std::size_t>{0, 0, 1},
                 "Equal predecessor costs did not favor the leftmost column.");
-        std::cout << "Vertical DP costs and predecessor columns passed.\n";
+        std::cout << "Vertical DP costs, predecessor columns, and backtracking passed.\n";
     }
     catch (const std::exception &error)
     {
