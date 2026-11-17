@@ -7,6 +7,12 @@ construction, complexity, and how to connect it to the team's image pipeline.
 
 ## Interactive CLI
 
+Double-click `run.bat` in the repository root to compile
+`build/Release/seam-carver.exe` and open the interactive menu in the same window.
+The batch file can find the CMake bundled with
+Visual Studio. The build requires the **Desktop development with C++** workload
+with the **C++ CMake tools for Windows** component or a separate CMake installation.
+
 Run `seam-carver.exe` without arguments (or double-click it). Choose **1. Graph
 Cut**, enter an image path, then enter the target **height** and **width**.
 DP and Greedy are listed but unavailable. Invalid choices, files, and dimensions
