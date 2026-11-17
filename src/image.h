@@ -21,6 +21,9 @@ namespace seam_carver
     void validate_image(const Image &image);
     Image load_image(const std::filesystem::path &path);
     void save_png(const Image &image, const std::filesystem::path &path);
+
+    // Returns one RGB gradient magnitude per pixel as energy[row][column].
+    // Border lookups use the nearest valid pixel. The calculation ignores alpha.
     EnergyMap calculate_energy(const Image &image);
     void remove_vertical_seam(Image &image, const std::vector<std::size_t> &seam);
     void remove_horizontal_seam(Image &image, const std::vector<std::size_t> &seam);

@@ -29,8 +29,22 @@ int main()
         Image original{3, 3, {}};
         for (std::uint8_t i = 0; i < 9; ++i) original.pixels.push_back({i, 0, 0, std::uint8_t(200 + i)});
         const auto energy = calculate_energy(original);
-        require(std::abs(energy[1][1] - std::sqrt(40.0)) < 1e-10, "Incorrect interior energy");
-        require(std::abs(energy[0][0] - std::sqrt(10.0)) < 1e-10, "Incorrect border energy");
+        // Blue increases by 1 across a row and 3 down a column. Clamping at an
+        // edge halves that axis's difference, and the varying alpha adds no energy.
+        const double expected_squared_energy[3][3] = {
+            {10, 13, 10},
+            {37, 40, 37},
+            {10, 13, 10},
+        };
+        require(energy.size() == original.height, "Energy map has the wrong number of rows");
+        for (std::size_t row = 0; row < original.height; ++row) {
+            require(energy[row].size() == original.width, "Energy map row has the wrong width");
+            for (std::size_t column = 0; column < original.width; ++column) {
+                const double expected_energy = std::sqrt(expected_squared_energy[row][column]);
+                require(std::abs(energy[row][column] - expected_energy) < 1e-10,
+                        "Energy map does not match the hand-calculated RGB gradients");
+            }
+        }
         require(calculate_energy(Image{1, 1, {{1, 2, 3, 255}}})[0][0] == 0,
                 "Incorrect singleton energy");
         auto vertical = original;
