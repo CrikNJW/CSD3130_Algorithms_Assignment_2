@@ -1,11 +1,13 @@
 #include "cli.h"
 #include "resize.h"
 #include "dp.h"
+#include "greedy.h"
 
 #include <charconv>
 #include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <atomic>
 #include <future>
@@ -74,10 +76,49 @@ namespace seam_carver
             const auto stem = input.stem().u8string() + "_" + algorithm + "_" +
                               std::to_string(width) + "x" + std::to_string(height);
             auto candidate = directory / std::filesystem::u8path(stem + ".png");
-            for (std::size_t number = 1; std::filesystem::exists(candidate); ++number)
+            for (std::size_t number = 1;
+                 std::filesystem::exists(candidate) ||
+                 (algorithm == "greedy" && std::filesystem::exists(candidate.parent_path() /
+                     std::filesystem::u8path(candidate.stem().u8string() + "_steps"))); ++number)
                 candidate = directory / std::filesystem::u8path(stem + "_" + std::to_string(number) + ".png");
             return candidate;
         }
+
+        // A failed or cancelled run removes only the frames it created.
+        struct SeamFrames
+        {
+            std::filesystem::path directory;
+            std::vector<std::filesystem::path> files;
+            std::size_t digits;
+            bool saved = false;
+
+            SeamFrames(const std::filesystem::path &destination, std::size_t total)
+                : directory(destination.parent_path() /
+                            std::filesystem::u8path(destination.stem().u8string() + "_steps")),
+                  digits(std::to_string(total).size())
+            {
+                if (!std::filesystem::create_directory(directory))
+                    throw std::runtime_error("Seam frame folder already exists.");
+            }
+
+            ~SeamFrames()
+            {
+                if (saved)
+                    return;
+                std::error_code ignored;
+                for (const auto &file : files)
+                    std::filesystem::remove(file, ignored);
+                std::filesystem::remove(directory, ignored);
+            }
+
+            void write(const Image &image, const GreedySeam &seam, bool vertical)
+            {
+                const auto number = std::to_string(files.size() + 1);
+                files.push_back(directory / ("step_" + std::string(digits - number.size(), '0') +
+                                             number + (vertical ? "_vertical.png" : "_horizontal.png")));
+                save_png(highlight_greedy_seam(image, seam, vertical), files.back());
+            }
+        };
     } // namespace
 
     int run_interactive(std::istream &input, std::ostream &output,
@@ -107,16 +148,11 @@ namespace seam_carver
             {
                 output << "\nChoose an algorithm:\n"
                           "  1. Graph Cut\n  2. Dynamic Programming\n"
-                          "  3. Greedy (not implemented yet)\n  0. Exit\n";
+                          "  3. Greedy\n  0. Exit\n";
                 const auto choice = read_line(input, output, "Algorithm: ");
                 if (choice == "0")
                     break;
-                if (choice == "3")
-                {
-                    output << "That algorithm is not implemented yet. Please choose Graph Cut or Dynamic Programming.\n";
-                    continue;
-                }
-                if (choice != "1" && choice != "2")
+                if (choice != "1" && choice != "2" && choice != "3")
                 {
                     output << "Please select 1, 2, 3, or 0.\n";
                     continue;
@@ -147,22 +183,53 @@ namespace seam_carver
                 output << "Loaded " << image.width << " x " << image.height << " (width x height).\n";
                 const auto height = dimension(input, output, "height", image.height);
                 const auto width = dimension(input, output, "width", image.width);
+                const auto total = image.width - width + image.height - height;
+                const bool greedy = choice == "3";
+                bool record_frames = false;
+                if (greedy && total > 0)
+                {
+                    while (true)
+                    {
+                        const auto answer = read_line(input, output, "Save a PNG frame for every seam? [y/N]: ");
+                        record_frames = answer == "y" || answer == "Y";
+                        if (record_frames || answer.empty() || answer == "n" || answer == "N")
+                            break;
+                        output << "Enter y or n.\n";
+                    }
+                }
                 try
                 {
-                    const auto destination = output_path(executable_directory / "output", source, width, height, choice == "2" ? "dp" : "graph_cut");
-                    output << "Resizing with " << (choice == "2" ? "Dynamic Programming" : "Graph Cut") << ". Large images may take some time.\n";
+                    const auto destination = output_path(executable_directory / "output", source, width, height,
+                                                         greedy ? "greedy" : choice == "2" ? "dp" : "graph_cut");
+                    std::optional<SeamFrames> frames;
+                    if (record_frames)
+                        frames.emplace(destination, total);
+                    output << "Resizing with " << (greedy ? "Greedy" : choice == "2" ? "Dynamic Programming" : "Graph Cut")
+                           << ". Large images may take some time.\n";
                     const auto resize = choice == "2" ? resize_dp : resize_graph_cut;
                     const auto start = std::chrono::steady_clock::now();
-                    const auto total = image.width - width + image.height - height;
                     std::atomic<std::size_t> completed{0};
                     std::atomic<bool> abort_requested{false};
                     const bool controls = console_keys || bool(poll_key);
                     if (controls)
                         output << "Press A to request abort, then Y or N (no Enter needed).\n";
+                    const Progress progress = [&](std::size_t done, std::size_t)
+                    { completed.store(done, std::memory_order_relaxed); };
+                    const CancelCheck cancelled = [&]
+                    { return abort_requested.load(std::memory_order_relaxed); };
+                    GreedyStep observe;
+                    if (frames)
+                    {
+                        observe = [&](const Image &current, const GreedySeam &seam, bool vertical)
+                        { frames->write(current, seam, vertical); };
+                    }
                     auto work = std::async(std::launch::async, [&]
-                                           { resize(image, width, height, [&](std::size_t done, std::size_t)
-                                                              { completed.store(done, std::memory_order_relaxed); }, [&]
-                                                              { return abort_requested.load(std::memory_order_relaxed); }); });
+                    {
+                        if (greedy)
+                            resize_greedy(image, width, height, progress, cancelled, observe);
+                        else
+                            resize(image, width, height, progress, cancelled);
+                    });
                     constexpr const char *spinner[] = {
                         u8"\u280B", u8"\u2819", u8"\u2839", u8"\u2838", u8"\u283C",
                         u8"\u2834", u8"\u2826", u8"\u2827", u8"\u2807", u8"\u280F"};
@@ -223,6 +290,11 @@ namespace seam_carver
                     save_png(image, destination);
                     output << "\nSaved: " << destination.u8string() << "\nResizing time: "
                            << std::fixed << std::setprecision(3) << elapsed << " seconds.\n";
+                    if (frames)
+                    {
+                        frames->saved = true;
+                        output << "Seam frames: " << frames->directory.u8string() << '\n';
+                    }
                 }
                 catch (const ResizeAborted &)
                 {

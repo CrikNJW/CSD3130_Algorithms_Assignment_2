@@ -14,9 +14,9 @@ the **Desktop development with C++** workload with the **C++ CMake tools for
 Windows** component or a separate CMake installation.
 
 Put your image in the `input` folder at the repository root. In the menu, choose
-**1. Graph Cut** or **2. Dynamic Programming**, enter the filename such as
-`photo.png`, then enter the target **height** and **width**. You can also open the
-compiled executable directly. Greedy is listed but unavailable. Invalid choices,
+**1. Graph Cut**, **2. Dynamic Programming**, or **3. Greedy**. Enter the filename
+such as `photo.png`, then enter the target **height** and **width**. You can also
+open the compiled executable directly. Invalid choices,
 files, and dimensions are prompted again. Enter `q` at any prompt or `0` at the
 algorithm menu to exit.
 After saving, the algorithm menu appears again so the window stays open.
@@ -34,7 +34,7 @@ before dimensions are requested.
   Enlargement is not implemented. Keeping either dimension unchanged is allowed.
 - Output: PNG in an `output` directory **beside the executable**, regardless of
   the current working directory. Example: `output/photo_graph_cut_640x480.png`.
-  DP outputs use `photo_dp_640x480.png`.
+  DP and Greedy use the suffixes `_dp_640x480.png` and `_greedy_640x480.png`.
   Existing names receive `_1`, `_2`, etc. The source file is left intact.
 - Graph Cut code is in `src/graph cut`. Shared image handling and CLI code are
   in `src`. RGB gradient energies are recalculated for each seam; width is
@@ -84,3 +84,12 @@ The tag runs the same checks and publishes the tested ZIP under **Releases**. Us
 
 See [DP implementation notes](docs/dp.md) for the recurrence, complexity, API,
 and test coverage. Implementation: `src/dp.cpp` and `src/dp.h`.
+
+## Greedy implementation
+
+Greedy selects the cheapest connected pixel at each step. It supports both
+orientations and uses the same energy map and image removal routines as DP.
+With option **3**, answer **y** to save one numbered PNG per removal in the
+adjacent `*_steps` folder. Magenta marks the next seam on the image as it looks
+at that step. The normal output PNG contains the completed resize.
+See [Greedy design, Question 2 answers, and benchmark](docs/greedy.md).

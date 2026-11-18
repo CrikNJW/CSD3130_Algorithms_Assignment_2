@@ -111,14 +111,14 @@ int main()
         const auto corrupt = directory / "corrupt.png";
         std::ofstream(corrupt) << "This is not an image.";
         std::ostringstream commands;
-        commands << "bad\n3\n1\nmissing-file.png\n\"" << corrupt.u8string()
+        commands << "bad\n1\nmissing-file.png\n\"" << corrupt.u8string()
                  << "\"\n\"" << source.filename().u8string() << "\"\n0\n4\n1.5\n2\n-1\n2junk\n2\n"
                  << "1\n" << source.u8string() << "\n2\n2\n0\n";
         std::istringstream input(commands.str());
         std::ostringstream output;
         require(run_interactive(input, output, exe_directory) == 0, "Interactive session failed");
         require(output.str().find("Invalid image:") != std::string::npos, "Missing image validation");
-        require(output.str().find("not implemented yet") != std::string::npos, "Missing unavailable choice message");
+        require(output.str().find("Please select 1, 2, 3, or 0.") != std::string::npos, "Missing invalid choice message");
         require(output.str().find("Saved:") != std::string::npos, "CLI did not save");
         const auto base = source.stem().u8string() + "_graph_cut_2x2";
         const auto first = exe_directory / "output" / fs::u8path(base + ".png");
@@ -128,6 +128,33 @@ int main()
         require(load_image(second).pixels == first_image.pixels, "Repeated save is inconsistent");
         require(!fs::exists(directory / "output"), "Output used working directory instead of executable directory");
         require(load_image(source).pixels == original.pixels, "Input image was changed");
+        const auto greedy_name = source.stem().u8string() + "_greedy_2x2";
+        const auto greedy_path = exe_directory / "output" / fs::u8path(greedy_name + ".png");
+        const auto steps = greedy_path.parent_path() / fs::u8path(greedy_name + "_steps");
+        const auto vertical_frame = steps / "step_1_vertical.png";
+        const auto horizontal_frame = steps / "step_2_horizontal.png";
+        for (bool abort : {true, false}) {
+            std::istringstream session("3\n" + source.u8string() + "\n2\n2\ny\n0\n");
+            std::ostringstream messages;
+            const std::string keys = "ay";
+            std::size_t next_key = 0;
+            require(run_interactive(session, messages, exe_directory, [&]() -> int {
+                return abort && next_key < keys.size() ? keys[next_key++] : -1;
+            }) == 0, "Greedy CLI session failed");
+            if (abort) {
+                require(!fs::exists(greedy_path) && !fs::exists(steps), "Aborted Greedy run saved images");
+            } else {
+                const auto result = load_image(greedy_path);
+                require(result.width == 2 && result.height == 2, "Greedy CLI resized to wrong dimensions");
+                require(messages.str().find("Seam frames:") != std::string::npos, "Greedy CLI did not report frames");
+                const auto v = load_image(vertical_frame);
+                const auto h = load_image(horizontal_frame);
+                require(v.width == 3 && v.height == 3 && v.pixels[0] == Pixel{255, 0, 255, 255},
+                        "Wrong vertical frame for Greedy CLI");
+                require(h.width == 2 && h.height == 3 && h.pixels[0] == Pixel{255, 0, 255, 255},
+                        "Wrong horizontal frame for Greedy CLI");
+            }
+        }
         const auto third = exe_directory / "output" / fs::u8path(base + "_2.png");
         for (bool confirm : {true, false}) {
             std::istringstream session("1\n" + source.u8string() + "\n2\n2\n0\nexit-marker\n");
@@ -159,7 +186,9 @@ int main()
             require(run_interactive(cancelled, messages, exe_directory) == 0, "Cancellation failed");
         }
         // Remove only this test's known files and then its empty directories.
-        for (const auto& file : {source, corrupt, project_file, first, second, third}) fs::remove(file);
+        for (const auto& file : {source, corrupt, project_file, first, second, third, greedy_path,
+                                 vertical_frame, horizontal_frame}) fs::remove(file);
+        fs::remove(steps);
         fs::remove(exe_directory / "output");
         fs::remove(exe_directory);
         fs::remove(build_directory);
