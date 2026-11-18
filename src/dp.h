@@ -38,5 +38,6 @@ namespace seam_carver
     // Targets must be positive and no larger than the original dimensions.
     // Cancellation throws ResizeAborted and can leave earlier removals in place.
     void resize_dp(Image &image, std::size_t target_width, std::size_t target_height,
-                   const Progress &progress = {}, const CancelCheck &cancelled = {});
+                   const Progress &progress = {}, const CancelCheck &cancelled = {},
+                   const SeamObserver &before_removal = {});
 } // namespace seam_carver

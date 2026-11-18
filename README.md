@@ -14,12 +14,26 @@ the **Desktop development with C++** workload with the **C++ CMake tools for
 Windows** component or a separate CMake installation.
 
 Put your image in the `input` folder at the repository root. In the menu, choose
-**1. Graph Cut**, **2. Dynamic Programming**, or **3. Greedy**. Enter the filename
-such as `photo.png`, then enter the target **height** and **width**. You can also
-open the compiled executable directly. Invalid choices,
+**1. Graph Cut**, **2. Dynamic Programming**, or **3. Greedy**. The menu lists
+supported images in `input` based on their file contents. Use **Up** or **Down**
+to move through the list and **Enter** to select. Press **P** to type or paste a
+filename or path. If the list is empty or input is redirected, enter the path
+directly. After selecting an image, enter the target **height** and **width**.
+You can also open the compiled executable directly. Invalid choices,
 files, and dimensions are prompted again. Enter `q` at any prompt or `0` at the
 algorithm menu to exit.
 After saving, the algorithm menu appears again so the window stays open.
+
+Choose **4. Compare all three** to run Graph Cut, Dynamic Programming, and
+Greedy on the same original image with one target height and width. The menu
+saves one PNG per algorithm and reports resize times in milliseconds, excluding
+PNG encoding. The summary compares Dynamic Programming with Greedy and with
+Graph Cut. Each pair reports first-seam overlap and energy on the original
+image, mean energy per removed pixel across the full resize, and relative
+runtime. Later seams are measured on each algorithm's evolving image. A
+side-by-side PNG shows Dynamic Programming on the left and the other result on
+the right for visual review. Aborting stops the remaining runs and keeps the
+PNGs already saved.
 
 Relative paths start in `input` regardless of where you launch the executable.
 If you run an extracted release outside the repository, put `input` beside the
@@ -39,8 +53,9 @@ before dimensions are requested.
 - Graph Cut code is in `src/graph cut`. Shared image handling and CLI code are
   in `src`. RGB gradient energies are recalculated for each seam; width is
   reduced first, followed by height. Alpha bytes are preserved.
-- A Braille dots spinner, seam count, and elapsed time update every 100 ms, including during
-  the first seam. In an interactive terminal, press **A** to request an abort,
+- In an interactive terminal, the progress bar shows the percentage of seams
+  removed, the seam count, and elapsed time. Compare mode labels each of its
+  three runs. Press **A** to request an abort,
   then **Y** to stop and return to the menu or **N** to continue (no Enter needed).
   Computation continues while the question is shown; confirming abort discards
   the result even if it just finished. Aborted jobs do not save an output image.

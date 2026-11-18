@@ -1,4 +1,6 @@
 #include "cli.h"
+#include "dp.h"
+#include "greedy.h"
 #include "resize.h"
 
 #include <chrono>
@@ -7,6 +9,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 using namespace seam_carver;
 namespace fs = std::filesystem;
@@ -108,7 +111,9 @@ int main()
         const auto decoded = load_image(source);
         require(decoded.width == 3 && decoded.height == 3 && decoded.pixels == original.pixels,
                 "PNG round-trip did not preserve BGRA pixels");
-        const auto corrupt = directory / "corrupt.png";
+        const auto renamed = input_directory / "another-image.data";
+        fs::copy_file(source, renamed);
+        const auto corrupt = input_directory / "corrupt.png";
         std::ofstream(corrupt) << "This is not an image.";
         std::ostringstream commands;
         commands << "bad\n1\nmissing-file.png\n\"" << corrupt.u8string()
@@ -117,8 +122,12 @@ int main()
         std::istringstream input(commands.str());
         std::ostringstream output;
         require(run_interactive(input, output, exe_directory) == 0, "Interactive session failed");
+        const auto listing = output.str();
+        require(listing.find("  1. another-image.data\n  2. " + source.filename().u8string() + "\n") != std::string::npos,
+                "Image list did not show supported files in filename order");
+        require(listing.find(". corrupt.png\n") == std::string::npos, "Image list included a fake PNG");
         require(output.str().find("Invalid image:") != std::string::npos, "Missing image validation");
-        require(output.str().find("Please select 1, 2, 3, or 0.") != std::string::npos, "Missing invalid choice message");
+        require(output.str().find("Please select 1, 2, 3, 4, or 0.") != std::string::npos, "Missing invalid choice message");
         require(output.str().find("Saved:") != std::string::npos, "CLI did not save");
         const auto base = source.stem().u8string() + "_graph_cut_2x2";
         const auto first = exe_directory / "output" / fs::u8path(base + ".png");
@@ -185,9 +194,60 @@ int main()
             std::ostringstream messages;
             require(run_interactive(cancelled, messages, exe_directory) == 0, "Cancellation failed");
         }
+        const auto compare_commands = "4\n" + renamed.filename().u8string() + "\n2\n2\n0\n";
+        std::istringstream stopped_comparison(compare_commands);
+        std::ostringstream stopped_summary;
+        const std::string stop_keys = "ay";
+        std::size_t stop_key = 0;
+        require(run_interactive(stopped_comparison, stopped_summary, exe_directory, [&]() -> int {
+            return stop_key < stop_keys.size() ? stop_keys[stop_key++] : -1;
+        }) == 0, "Stopping comparison failed");
+        const auto stopped_text = stopped_summary.str();
+        require(stopped_text.find("Comparison stopped during Graph Cut.") != std::string::npos &&
+                stopped_text.find("No PNGs were saved.") != std::string::npos &&
+                stopped_text.find("[2/3]") == std::string::npos,
+                "Stopping the first run should report zero saved PNGs and skip the remaining runs");
+        std::istringstream comparison(compare_commands);
+        std::ostringstream summary;
+        require(run_interactive(comparison, summary, exe_directory) == 0, "Comparison session failed");
+        const auto comparison_text = summary.str();
+        require(comparison_text.find("Comparison at 2 x 2 (3 of 3 completed)") != std::string::npos &&
+                comparison_text.find("Dynamic Programming vs Greedy") != std::string::npos &&
+                comparison_text.find("Dynamic Programming vs Graph Cut") != std::string::npos &&
+                comparison_text.find("First vertical seam on the original") != std::string::npos &&
+                comparison_text.find("Mean energy per removed pixel") != std::string::npos &&
+                comparison_text.find("Running time:") != std::string::npos &&
+                comparison_text.find("Pixels with different RGBA values") == std::string::npos,
+                "Comparison summary did not report DP pairings, seams, and running time");
+        auto expected_dp = original;
+        auto expected_greedy = original;
+        resize_dp(expected_dp, 2, 2);
+        resize_greedy(expected_greedy, 2, 2);
+        const auto comparison_folder = exe_directory / "output";
+        const auto compared_graph_cut = comparison_folder / "another-image_graph_cut_2x2.png";
+        const auto compared_dp = comparison_folder / "another-image_dp_2x2.png";
+        const auto compared_greedy = comparison_folder / "another-image_greedy_2x2.png";
+        const auto dp_vs_greedy = comparison_folder / "another-image_dp_vs_greedy_2x2.png";
+        const auto dp_vs_graph_cut = comparison_folder / "another-image_dp_vs_graph_cut_2x2.png";
+        require(load_image(compared_graph_cut).pixels == first_image.pixels &&
+                load_image(compared_dp).pixels == expected_dp.pixels &&
+                load_image(compared_greedy).pixels == expected_greedy.pixels,
+                "Comparison did not resize an original copy with each algorithm");
+        const std::pair<fs::path, const Image*> previews[]{
+            {dp_vs_greedy, &expected_greedy}, {dp_vs_graph_cut, &first_image}};
+        for (const auto& [path, expected] : previews) {
+            const auto preview = load_image(path);
+            require(preview.height == 2 && preview.width > 4, "Visual comparison dimensions are incorrect");
+            for (std::size_t row = 0; row < preview.height; ++row)
+                for (std::size_t column = 0; column < 2; ++column)
+                    require(preview.pixels[row * preview.width + column] == expected_dp.pixels[row * 2 + column] &&
+                            preview.pixels[(row + 1) * preview.width - 2 + column] == expected->pixels[row * 2 + column],
+                            "Visual comparison should contain the original-sized results with DP on the left");
+        }
         // Remove only this test's known files and then its empty directories.
-        for (const auto& file : {source, corrupt, project_file, first, second, third, greedy_path,
-                                 vertical_frame, horizontal_frame}) fs::remove(file);
+        for (const auto& file : {source, renamed, corrupt, project_file, first, second, third, greedy_path,
+                                 vertical_frame, horizontal_frame, compared_graph_cut, compared_dp,
+                                 compared_greedy, dp_vs_greedy, dp_vs_graph_cut}) fs::remove(file);
         fs::remove(steps);
         fs::remove(exe_directory / "output");
         fs::remove(exe_directory);

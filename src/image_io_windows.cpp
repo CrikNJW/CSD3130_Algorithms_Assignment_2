@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <wincodec.h>
 #include <wrl/client.h>
+#include <algorithm>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -57,6 +58,40 @@ namespace seam_carver
             return static_cast<UINT>(width * height * 4);
         }
     } // namespace
+
+    std::vector<std::filesystem::path> list_supported_images(const std::filesystem::path &directory)
+    {
+        std::error_code error;
+        const std::filesystem::directory_iterator entries(directory, error);
+        if (error == std::errc::no_such_file_or_directory)
+            return {};
+        if (error)
+            throw std::filesystem::filesystem_error("Cannot list input folder", directory, error);
+
+        ComSession session;
+        auto codec = factory();
+        std::vector<std::filesystem::path> images;
+        for (const auto &entry : entries)
+        {
+            if (!entry.is_regular_file(error))
+                continue;
+
+            ComPtr<IWICBitmapDecoder> decoder;
+            if (FAILED(codec->CreateDecoderFromFilename(entry.path().c_str(), nullptr, GENERIC_READ,
+                                                         WICDecodeMetadataCacheOnDemand, decoder.GetAddressOf())))
+                continue;
+
+            GUID format{};
+            if (FAILED(decoder->GetContainerFormat(&format)))
+                continue;
+            if (IsEqualGUID(format, GUID_ContainerFormatPng) || IsEqualGUID(format, GUID_ContainerFormatJpeg) ||
+                IsEqualGUID(format, GUID_ContainerFormatBmp) || IsEqualGUID(format, GUID_ContainerFormatGif) ||
+                IsEqualGUID(format, GUID_ContainerFormatTiff))
+                images.push_back(entry.path());
+        }
+        std::sort(images.begin(), images.end());
+        return images;
+    }
 
     Image load_image(const std::filesystem::path &path)
     {

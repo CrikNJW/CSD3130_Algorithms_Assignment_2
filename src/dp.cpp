@@ -129,7 +129,8 @@ namespace seam_carver
     }
 
     void resize_dp(Image &image, std::size_t target_width, std::size_t target_height,
-                   const Progress &progress, const CancelCheck &cancelled)
+                   const Progress &progress, const CancelCheck &cancelled,
+                   const SeamObserver &before_removal)
     {
         check_cancelled(cancelled);
         validate_image(image);
@@ -150,6 +151,8 @@ namespace seam_carver
             const auto energy = calculate_energy(image);
             const auto seam = vertical ? find_vertical_dp(energy, cancelled) : find_horizontal_dp(energy, cancelled);
             check_cancelled(cancelled);
+            if (before_removal)
+                before_removal(seam.indices, seam.energy);
             if (vertical)
                 remove_vertical_seam(image, seam.indices);
             else

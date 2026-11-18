@@ -4,7 +4,8 @@
 namespace seam_carver
 {
     void resize_graph_cut(Image &image, std::size_t target_width, std::size_t target_height,
-                          const Progress &progress, const CancelCheck &cancelled)
+                          const Progress &progress, const CancelCheck &cancelled,
+                          const SeamObserver &before_removal)
     {
         check_cancelled(cancelled);
         validate_image(image);
@@ -19,6 +20,8 @@ namespace seam_carver
         {
             const Seam seam = find_vertical_graph_cut(calculate_energy(image), cancelled);
             check_cancelled(cancelled);
+            if (before_removal)
+                before_removal(seam.indices, seam.energy);
             remove_vertical_seam(image, seam.indices);
             if (progress)
                 progress(++completed, total);
@@ -27,6 +30,8 @@ namespace seam_carver
         {
             const Seam seam = find_horizontal_graph_cut(calculate_energy(image), cancelled);
             check_cancelled(cancelled);
+            if (before_removal)
+                before_removal(seam.indices, seam.energy);
             remove_horizontal_seam(image, seam.indices);
             if (progress)
                 progress(++completed, total);

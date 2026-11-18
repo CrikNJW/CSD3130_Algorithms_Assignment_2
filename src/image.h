@@ -19,6 +19,7 @@ namespace seam_carver
     };
 
     void validate_image(const Image &image);
+    std::vector<std::filesystem::path> list_supported_images(const std::filesystem::path &directory);
     Image load_image(const std::filesystem::path &path);
     void save_png(const Image &image, const std::filesystem::path &path);
 
