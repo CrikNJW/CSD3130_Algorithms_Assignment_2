@@ -7,9 +7,9 @@ nonnegative, finite pixel energies used by the DP and Greedy implementations:
 #include "graph_cut.h"
 
 seam_carver::EnergyMap energy = {{9, 1, 9}, {9, 9, 1}, {9, 1, 9}};
-auto vertical = seam_carver::find_vertical_graph_cut(energy);
+seam_carver::Seam vertical = seam_carver::find_vertical_graph_cut(energy);
 // vertical.indices[y] is the column to remove from row y: {1, 2, 1}.
-auto horizontal = seam_carver::find_horizontal_graph_cut(energy);
+seam_carver::Seam horizontal = seam_carver::find_horizontal_graph_cut(energy);
 // horizontal.indices[x] is the row to remove from column x.
 ```
 
@@ -23,7 +23,8 @@ modified. Invalid maps throw `std::invalid_argument`; unsafe capacity sums throw
 
 For a height H, width W energy map, use W+1 boundary nodes per row. Pixel x is
 represented by the directed edge from boundary x to boundary x+1, with capacity
-`energy[y][x]`. Connect the source to boundary 0 and boundary W to the sink.
+`energy[y][x]`. Identify each row's boundary 0 with the source and boundary W
+with the sink. This preserves the cut and removes the extra terminal edges.
 Add backward edges x+1 -> x and diagonal edges (y,x) -> (y-1,x-1) and
 (y,x) -> (y+1,x-1), where in bounds. These constraint edges use a capacity
 strictly greater than the sum of all pixel energies (1 for an all-zero map).
@@ -40,11 +41,13 @@ Why it works:
 3. Diagonal edges force adjacent prefix endpoints to differ by at most one.
 4. Thus every feasible minimum cut is a connected seam; conversely, each valid
    seam defines a cut crossing only its pixel edges, with the same cost.
-5. Edmonds-Karp starts with zero flow and repeatedly uses BFS to find a
-   shortest augmenting path by edge count. It sends the path's bottleneck
-   capacity and updates both forward and reverse residual capacities.
-6. When no augmenting path remains, residual BFS from the source identifies
-   the minimum cut. Its rightmost boundary in each row gives the seam index.
+5. Dinic uses BFS over the residual graph to assign levels by distance from the
+   source. Iterative DFS sends flow along edges that advance one level until
+   all source-to-sink paths in those levels are blocked. The next phase builds
+   new levels. Each vertex tracks the next edge to inspect during DFS.
+6. Once BFS cannot reach the sink, residual reachability from the source
+   identifies the minimum cut. Its rightmost boundary in each row gives the
+   seam index.
 
 Horizontal seams run the same algorithm on the transposed energy map. Each
 original directed edge has a separate reverse residual edge; these are distinct
@@ -75,29 +78,30 @@ requires a different cost model and is not implemented here.
 
 ## Complexity and evaluation
 
-The graph has V = H(W+1)+2 vertices and E = O(HW) edges, including residual edges.
-Construction and storage take O(HW). Edmonds-Karp takes O(V E^2) time,
-giving O((HW)^3) worst-case time and O(HW) space per seam for this graph.
+The contracted graph has V = H(W-1)+2 vertices and E = O(HW) edges, including
+residual edges. Construction and storage take O(HW). Dinic runs in O(V^2 E)
+time in general. Each BFS takes O(V+E), and the iterative DFS uses O(V) space.
 DP's O(HW) per-seam time is preferable for this simple energy model; Graph Cut
 provides the alternative min-cut/max-flow formulation required by the assignment.
 
-Edmonds-Karp performs a fresh BFS for every augmentation, so it can be very
-slow on large images. A 1199x506 image resized to 500x200 requires 1005 seam
+The graph is rebuilt for every seam, which can be slow on large images.
+A 1199x506 image resized to 500x200 requires 1005 seam
 removals, each with a fresh energy map and graph. Start with small images and
 modest reductions. The CLI runs resizing in a worker and displays elapsed time
 every 100 ms with a Braille dots spinner, including during the first seam. Press A
 in an interactive terminal for an abort confirmation: Y cooperatively cancels
 and returns to the algorithm menu; N continues. Cancellation is checked during
-graph construction, residual BFS, and between seam removals, so it need not wait
-for an entire seam. No output is saved after a confirmed abort. The image is
+graph construction, level BFS, blocking-flow DFS, and between seam removals, so it
+need not wait for an entire seam. No output is saved after a confirmed abort. The image is
 never silently downscaled or switched to DP. Ctrl+C still terminates the program.
 
 CTest checks both orientations against exhaustive enumeration on all 512 binary
 3x3 maps, 300 seeded random maps up to 5x5, and 14 specific edge cases. It also
 checks connectivity, reported cost versus max-flow, invalid maps, and overflow.
 An additional 202 checks use a test-only DP oracle on larger random maps and a
-12000-pixel-wide map, bringing the total to 1854. These checks are independent
-of the production max-flow algorithm and run in Release builds.
+12000-pixel-wide map. A mixed-scale case checks that a tiny positive cut cost is preserved.
+These checks are independent of the production max-flow algorithm and run in
+Release builds.
 
 For the report, use the same images, energies, target sizes, seam-removal order,
 and machine for all three methods. Record seam costs, seam overlays, resized

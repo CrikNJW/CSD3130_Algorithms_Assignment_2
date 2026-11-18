@@ -12,7 +12,7 @@ namespace seam_carver
     {
 
         using Capacity = long double;
-        constexpr auto missing = std::numeric_limits<std::size_t>::max();
+        constexpr std::size_t missing = std::numeric_limits<std::size_t>::max();
 
         Capacity validate(const EnergyMap &energy, const CancelCheck &cancelled)
         {
@@ -21,7 +21,7 @@ namespace seam_carver
                 throw std::invalid_argument("Energy map must be nonempty.");
             }
             Capacity total = 0;
-            for (const auto &row : energy)
+            for (const std::vector<double> &row : energy)
             {
                 check_cancelled(cancelled);
                 if (row.size() != energy.front().size())
@@ -44,6 +44,16 @@ namespace seam_carver
             return total;
         }
 
+        std::size_t boundary_node(std::size_t row, std::size_t column,
+                                  std::size_t width, std::size_t source)
+        {
+            if (column == 0)
+                return source;
+            if (column == width)
+                return source + 1;
+            return row * (width - 1) + column - 1;
+        }
+
         struct Edge
         {
             std::size_t to;
@@ -60,60 +70,100 @@ namespace seam_carver
             {
                 // Each original directed edge has its own reverse residual edge,
                 // separate from any original backward constraint edge.
-                const auto forward_index = edges_[from].size();
-                const auto reverse_index = edges_[to].size();
+                const std::size_t forward_index = edges_[from].size();
+                const std::size_t reverse_index = edges_[to].size();
                 edges_[from].push_back({to, reverse_index, capacity});
                 edges_[to].push_back({from, forward_index, 0});
             }
 
             Capacity max_flow(std::size_t source, std::size_t sink, const CancelCheck &cancelled)
             {
-                // Edmonds-Karp: BFS finds a shortest augmenting path (by edge count)
-                // in the residual graph. Start from zero flow and repeat until no
-                // source-to-sink path remains.
+                const std::size_t vertices = edges_.size();
+                std::vector<std::size_t> level(vertices);
+                std::vector<std::size_t> current(vertices);
+                std::vector<std::size_t> pending(vertices);
+                struct PathStep
+                {
+                    std::size_t vertex;
+                    Capacity bottleneck;
+                };
+                std::vector<PathStep> path;
+                path.reserve(vertices);
                 Capacity flow = 0;
-                std::vector<std::size_t> parent(edges_.size());
-                std::vector<std::size_t> parent_edge(edges_.size());
+
                 while (true)
                 {
                     check_cancelled(cancelled);
-                    std::fill(parent.begin(), parent.end(), missing);
-                    parent[source] = source;
-                    std::queue<std::size_t> pending;
-                    pending.push(source);
-                    std::size_t visited = 0;
-                    while (!pending.empty() && parent[sink] == missing)
+                    // Build the level graph with BFS over positive residual edges.
+                    std::fill(level.begin(), level.end(), missing);
+                    level[source] = 0;
+                    std::size_t read = 0;
+                    std::size_t write = 1;
+                    pending[0] = source;
+                    while (read < write)
                     {
-                        if ((visited++ % 256) == 0)
+                        if (read % 256 == 0)
                             check_cancelled(cancelled);
-                        const auto from = pending.front();
-                        pending.pop();
-                        for (std::size_t i = 0; i < edges_[from].size(); ++i)
+                        const std::size_t from = pending[read++];
+                        if (level[from] >= level[sink])
+                            break;
+                        for (const Edge &edge : edges_[from])
                         {
-                            const auto &edge = edges_[from][i];
-                            if (edge.residual > 0 && parent[edge.to] == missing)
+                            if (edge.residual > 0 && level[edge.to] == missing)
                             {
-                                parent[edge.to] = from;
-                                parent_edge[edge.to] = i;
-                                pending.push(edge.to);
+                                level[edge.to] = level[from] + 1;
+                                pending[write++] = edge.to;
                             }
                         }
                     }
-                    if (parent[sink] == missing)
+                    if (level[sink] == missing)
                         return flow;
 
-                    Capacity amount = std::numeric_limits<Capacity>::max();
-                    for (auto v = sink; v != source; v = parent[v])
+                    // Find the blocking flow with iterative DFS. Keep each vertex's
+                    // current edge until it saturates or leads to a dead end.
+                    std::fill(current.begin(), current.end(), 0);
+                    path.push_back({source, std::numeric_limits<Capacity>::max()});
+                    std::size_t inspected = 0;
+                    while (!path.empty())
                     {
-                        amount = std::min(amount, edges_[parent[v]][parent_edge[v]].residual);
+                        if (inspected++ % 256 == 0)
+                            check_cancelled(cancelled);
+                        const std::size_t from = path.back().vertex;
+                        if (from == sink)
+                        {
+                            const Capacity amount = path.back().bottleneck;
+                            for (std::size_t i = 0; i + 1 < path.size(); ++i)
+                            {
+                                const std::size_t vertex = path[i].vertex;
+                                Edge &edge = edges_[vertex][current[vertex]];
+                                edge.residual -= amount;
+                                edges_[edge.to][edge.reverse].residual += amount;
+                            }
+                            flow += amount;
+                            path.resize(1);
+                            continue;
+                        }
+
+                        std::size_t &index = current[from];
+                        if (index == edges_[from].size())
+                        {
+                            path.pop_back();
+                            if (!path.empty())
+                                ++current[path.back().vertex];
+                            continue;
+                        }
+
+                        const Edge &edge = edges_[from][index];
+                        if (edge.residual > 0 && level[edge.to] == level[from] + 1 &&
+                            (edge.to == sink || level[edge.to] < level[sink]))
+                        {
+                            path.push_back({edge.to, std::min(path.back().bottleneck, edge.residual)});
+                        }
+                        else
+                        {
+                            ++index;
+                        }
                     }
-                    for (auto v = sink; v != source; v = parent[v])
-                    {
-                        auto &edge = edges_[parent[v]][parent_edge[v]];
-                        edge.residual -= amount;
-                        edges_[edge.to][edge.reverse].residual += amount;
-                    }
-                    flow += amount;
                 }
             }
 
@@ -128,9 +178,9 @@ namespace seam_carver
                 {
                     if ((visited++ % 256) == 0)
                         check_cancelled(cancelled);
-                    const auto from = pending.front();
+                    const std::size_t from = pending.front();
                     pending.pop();
-                    for (const auto &edge : edges_[from])
+                    for (const Edge &edge : edges_[from])
                     {
                         if (edge.residual > 0 && !reached[edge.to])
                         {
@@ -151,56 +201,57 @@ namespace seam_carver
     Seam find_vertical_graph_cut(const EnergyMap &energy, const CancelCheck &cancelled)
     {
         const Capacity total = validate(energy, cancelled);
-        const auto height = energy.size();
-        const auto width = energy.front().size();
-        if (width == missing || height > (missing - 2) / (width + 1))
+        const std::size_t height = energy.size();
+        const std::size_t width = energy.front().size();
+        if (width > 1 && height > (missing - 2) / (width - 1))
         {
             throw std::overflow_error("Energy map dimensions are too large.");
         }
 
-        // W+1 boundary nodes per row let a cut select ANY of the W pixels.
-        // Pixel x is represented by the finite edge boundary x -> boundary x+1.
-        const auto stride = width + 1;
-        const auto source = height * stride;
-        const auto sink = source + 1;
-        FlowNetwork graph(sink + 1);
-        
+        // All left boundaries are fixed to the source side of every minimum
+        // cut, and all right boundaries are fixed to the sink side. Merge them
+        // with the corresponding terminals.
+        const std::size_t source = height * (width - 1);
+        const std::size_t sink = source + 1;
         // Greater than every feasible seam cost, no IEEE infinity arithmetic.
         const Capacity hard = total + std::max(Capacity{1}, total);
-        const auto node = [stride](std::size_t y, std::size_t x)
-        { return y * stride + x; };
-
+        FlowNetwork graph(sink + 1);
         for (std::size_t y = 0; y < height; ++y)
         {
             check_cancelled(cancelled);
-            graph.add_edge(source, node(y, 0), hard);
-            graph.add_edge(node(y, width), sink, hard);
             for (std::size_t x = 0; x < width; ++x)
             {
-                graph.add_edge(node(y, x), node(y, x + 1), energy[y][x]);
-                // Source-side nodes must form a prefix in each row.
-                graph.add_edge(node(y, x + 1), node(y, x), hard);
+                const std::size_t left = boundary_node(y, x, width, source);
+                const std::size_t right = boundary_node(y, x + 1, width, source);
+                graph.add_edge(left, right, energy[y][x]);
+
+                // Backward edges force a prefix. Arcs out of the sink or into
+                // the source never cross a cut and can be omitted.
+                if (x > 0 && x + 1 < width)
+                    graph.add_edge(right, left, hard);
             }
-            for (std::size_t x = 1; x <= width; ++x)
+            for (std::size_t x = 2; x < width; ++x)
             {
                 // Adjacent row prefixes can differ in length by at most one.
+                const std::size_t from = boundary_node(y, x, width, source);
                 if (y > 0)
-                    graph.add_edge(node(y, x), node(y - 1, x - 1), hard);
+                    graph.add_edge(from, boundary_node(y - 1, x - 1, width, source), hard);
                 if (y + 1 < height)
-                    graph.add_edge(node(y, x), node(y + 1, x - 1), hard);
+                    graph.add_edge(from, boundary_node(y + 1, x - 1, width, source), hard);
             }
         }
 
-        const auto flow = graph.max_flow(source, sink, cancelled);
-        const auto reachable = graph.source_side(source, cancelled);
+        const Capacity flow = graph.max_flow(source, sink, cancelled);
+        const std::vector<bool> reachable = graph.source_side(source, cancelled);
         Seam seam{{}, 0, static_cast<double>(flow)};
+
         seam.indices.reserve(height);
         Capacity cost = 0;
         for (std::size_t y = 0; y < height; ++y)
         {
             check_cancelled(cancelled);
             std::size_t x = 0;
-            while (x + 1 < width && reachable[node(y, x + 1)])
+            while (x + 1 < width && reachable[boundary_node(y, x + 1, width, source)])
                 ++x;
             seam.indices.push_back(x);
             cost += energy[y][x];

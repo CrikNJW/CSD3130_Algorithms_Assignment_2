@@ -25,11 +25,11 @@ bool near(double a, double b)
 double dp_minimum(const EnergyMap& energy)
 {
     // Test-only independent oracle; the production solver still uses max-flow.
-    auto previous = energy.front();
+    std::vector<double> previous = energy.front();
     for (std::size_t y = 1; y < energy.size(); ++y) {
-        auto current = energy[y];
+        std::vector<double> current = energy[y];
         for (std::size_t x = 0; x < current.size(); ++x) {
-            auto best = previous[x];
+            double best = previous[x];
             if (x > 0) best = std::min(best, previous[x - 1]);
             if (x + 1 < current.size()) best = std::min(best, previous[x + 1]);
             current[x] += best;
@@ -51,9 +51,9 @@ double exhaustive_minimum(const EnergyMap &energy)
             best = std::min(best, cost);
             return;
         }
-        const auto begin = x == 0 ? 0 : x - 1;
-        const auto end = std::min(x + 1, energy.front().size() - 1);
-        for (auto next = begin; next <= end; ++next)
+        const std::size_t begin = x == 0 ? 0 : x - 1;
+        const std::size_t end = std::min(x + 1, energy.front().size() - 1);
+        for (std::size_t next = begin; next <= end; ++next)
             visit(y + 1, next, cost);
     };
     for (std::size_t x = 0; x < energy.front().size(); ++x)
@@ -63,7 +63,7 @@ double exhaustive_minimum(const EnergyMap &energy)
 
 void check(const EnergyMap &energy, bool horizontal)
 {
-    const auto seam = horizontal ? seam_carver::find_horizontal_graph_cut(energy)
+    const seam_carver::Seam seam = horizontal ? seam_carver::find_horizontal_graph_cut(energy)
                                  : seam_carver::find_vertical_graph_cut(energy);
     EnergyMap oriented = energy;
     if (horizontal)
@@ -77,11 +77,11 @@ void check(const EnergyMap &energy, bool horizontal)
     double cost = 0;
     for (std::size_t y = 0; y < seam.indices.size(); ++y)
     {
-        const auto x = seam.indices[y];
+        const std::size_t x = seam.indices[y];
         require(x < oriented.front().size(), "Seam outside image");
         if (y > 0)
         {
-            const auto previous = seam.indices[y - 1];
+            const std::size_t previous = seam.indices[y - 1];
             require(std::max(x, previous) - std::min(x, previous) <= 1,
                     "Disconnected seam");
         }
@@ -89,7 +89,7 @@ void check(const EnergyMap &energy, bool horizontal)
     }
     require(near(cost, seam.energy), "Incorrect reported energy");
     require(near(cost, seam.cut_capacity), "Max-flow differs from seam cost");
-    const auto expected = oriented.size() <= 5 && oriented.front().size() <= 5
+    const double expected = oriented.size() <= 5 && oriented.front().size() <= 5
         ? exhaustive_minimum(oriented) : dp_minimum(oriented);
     require(near(cost, expected), "Seam is not optimal");
 }
@@ -109,16 +109,22 @@ int main()
             {{0.1, 0.2}, {0.3, 0.1}},
             {{1e-15, 0}, {1e-15, 0}},
             {{1e100, 2e100}, {3e100, 1e100}}};
-        for (const auto &energy : cases)
+        for (const EnergyMap &energy : cases)
         {
             check(energy, false);
             check(energy, true);
         }
-        const auto last = seam_carver::find_vertical_graph_cut(cases[4]);
+        const seam_carver::Seam last = seam_carver::find_vertical_graph_cut(cases[4]);
         require(last.indices == std::vector<std::size_t>({2, 2, 2}),
                 "Last-column regression");
-        const auto tiny = seam_carver::find_vertical_graph_cut(cases[12]);
+        const seam_carver::Seam tiny = seam_carver::find_vertical_graph_cut(cases[12]);
         require(tiny.energy == 0, "Tiny positive energies must not be rounded to zero");
+
+        // A much larger capacity must not hide a tiny positive seam cost.
+        const seam_carver::Seam mixed_scale = seam_carver::find_vertical_graph_cut({{0, 1, 1e-130}, {1e70, 1e10, 0}});
+        require(mixed_scale.indices == std::vector<std::size_t>({2, 2}) &&
+                    mixed_scale.energy == 1e-130 && mixed_scale.cut_capacity == 1e-130,
+                "Wrong cut with mixed-scale capacities");
 
         // Exhaust all binary 3x3 maps, not merely a few hand-picked paths.
         for (unsigned mask = 0; mask < 512; ++mask)
@@ -138,8 +144,8 @@ int main()
                 for (int trial = 0; trial < 12; ++trial)
                 {
                     EnergyMap energy(h, std::vector<double>(w));
-                    for (auto &row : energy)
-                        for (auto &value : row)
+                    for (std::vector<double> &row : energy)
+                        for (double &value : row)
                             value = values(generator) / 7.0;
                     check(energy, false);
                     check(energy, true);
@@ -149,8 +155,8 @@ int main()
         // Larger grids exercise repeated augmentations and reverse residual flow.
         for (int trial = 0; trial < 100; ++trial) {
             EnergyMap energy(10 + generator() % 45, std::vector<double>(10 + generator() % 65));
-            for (auto& row : energy)
-                for (auto& value : row) value = std::sqrt(double(values(generator)));
+            for (std::vector<double> &row : energy)
+                for (double &value : row) value = std::sqrt(double(values(generator)));
             check(energy, false);
             check(energy, true);
         }
@@ -160,7 +166,7 @@ int main()
         check(wide, true);
         const std::vector<EnergyMap> invalid{
             {}, {{}}, {{1}, {1, 2}}, {{-1}}, {{std::numeric_limits<double>::infinity()}}, {{std::numeric_limits<double>::quiet_NaN()}}};
-        for (const auto &energy : invalid)
+        for (const EnergyMap &energy : invalid)
         {
             for (bool horizontal : {false, true})
             {
@@ -189,7 +195,7 @@ int main()
             rejected = true;
         }
         require(rejected, "Unsafe capacity accepted");
-        std::cout << "Graph Cut: 1854 optimality checks and input validation passed.\n";
+        std::cout << "Graph Cut: 1855 optimality checks and input validation passed.\n";
     }
     catch (const std::exception &error)
     {

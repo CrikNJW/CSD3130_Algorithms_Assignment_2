@@ -1,6 +1,6 @@
 # Assignment 2 Seam Carver
 
-The C++ project includes a Graph Cut seam-finding library using Edmonds-Karp
+The C++ project includes a Graph Cut seam-finding library using Dinic
 max-flow, with vertical and horizontal seams and CTest correctness checks.
 See [Graph Cut design and integration](docs/graph_cut.md) for the API, graph
 construction, complexity, and how to connect it to the team's image pipeline.

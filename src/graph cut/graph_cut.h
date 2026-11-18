@@ -31,7 +31,7 @@ namespace seam_carver
         double cut_capacity;
     };
 
-    // Edmonds-Karp max-flow followed by residual source-side reachability.
+    // Dinic max-flow followed by residual source-side reachability.
     // Throws std::invalid_argument for invalid input and std::overflow_error
     // if the sum of energies is too large for safe graph capacities.
     Seam find_vertical_graph_cut(const EnergyMap &energy, const CancelCheck &cancelled = {});
