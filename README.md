@@ -1,4 +1,39 @@
-# Assignment 2 Seam Carver
+# C++ Seam Carving — Graph Cut, Dynamic Programming and Greedy
+
+**Image resizing and algorithms project** comparing three seam-carving approaches in an interactive Windows command-line application.
+
+## Project overview
+
+- **Problem:** resize images by removing low-energy seams while comparing alternative algorithmic strategies.
+- **Implemented approaches:** Graph Cut (Dinic max-flow), Dynamic Programming and Greedy seam selection.
+- **Evaluation:** run all three algorithms against the same original image and target dimensions, with runtime and seam-energy comparisons and side-by-side PNG output.
+- **Testing:** CMake/CTest correctness checks, including graph-cut test coverage.
+- **Tools:** C++, CMake, Visual Studio Windows SDK.
+
+## Quick start
+
+On Windows with Visual Studio's C++ and CMake tools installed, double-click `run.bat`, or build from a terminal:
+
+```powershell
+cmake -S . -B build -A x64
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
+```
+
+In the interactive menu, choose Graph Cut, Dynamic Programming, Greedy, or **Compare all three**. Select an input image and target width/height. The application writes result PNGs and reports measurements in milliseconds.
+
+## Evidence to inspect
+
+- [Source code](src/)
+- [Tests](tests/)
+- [Graph Cut design and complexity](docs/graph_cut.md)
+- [Sample inputs](input/)
+
+**For recruiters:** This is a shared coursework repository. Code ownership should be assessed from individual contributions and commit history rather than inferred from the project description.
+
+---
+
+## Detailed usage and technical notes
 
 The C++ project includes a Graph Cut seam-finding library using Dinic
 max-flow, with vertical and horizontal seams and CTest correctness checks.
